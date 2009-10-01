@@ -140,11 +140,11 @@ class Pathname
     # eg. foobar4.5.1
     /((\d+\.)*\d+)$/.match stem
     return $1 if $1
-    
+
     # eg foobar-4.5.0-bin
-    /-((\d+\.)*\d+-bin)$/.match stem
+    /-((\d+\.)+\d+[abc]?)-(bin|src)$/.match stem
     return $1 if $1
-    
+
     # eg. otp_src_R13B (this is erlang's style)
     # eg. astyle_1.23_macosx.tar.gz
     stem.scan /_([^_]+)/ do |match|
@@ -152,6 +152,10 @@ class Pathname
     end
 
     nil
+  end
+
+  if '1.9' <= RUBY_VERSION
+    alias_method :to_str, :to_s
   end
 end
 

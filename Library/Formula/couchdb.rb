@@ -5,15 +5,21 @@ class Couchdb <Formula
   @homepage='http://couchdb.apache.org/'
   @md5='9583efae5adfb3f9043e970fef825561'
 
-  def deps
-    LibraryDep.new 'spidermonkey'
-    LibraryDep.new 'icu4c'
-    BinaryDep.new 'erlang'
+  depends_on 'spidermonkey'
+  depends_on 'icu4c'
+  depends_on 'erlang'
+
+  def skip_clean? path
+    path == prefix+"var/lib/couchdb" or
+    path == prefix+"var/log/couchdb"
   end
 
   def install
     system "./configure", "--prefix=#{prefix}"
     system "make"
     system "make install"
+
+    (prefix+"var/lib/couchdb").mkpath
+    (prefix+"var/log/couchdb").mkpath
   end
 end

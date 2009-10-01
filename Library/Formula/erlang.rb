@@ -1,26 +1,24 @@
 require 'brewkit'
 
 class ErlangManuals <Formula
+  @version='R13B02-1'
   @homepage='http://www.erlang.org'
-  @url='http://erlang.org/download/snapshots/otp_man_R13B02_2009-09-04_18.tar.gz'
-  @md5='853d01156d49f16b30ead8e0145f45ca'
+  @url='http://www.erlang.org/download/otp_doc_man_R13B02-1.tar.gz'
+  @md5='b5f7b20faa049a8b6a753fc7a462d02d'
 end
 
 class ErlangHtmlDocs <Formula
+  @version='R13B02-1'
   @homepage='http://www.erlang.org'
-  @url='http://erlang.org/download/otp_doc_html_R13B01.tar.gz'
-  @md5='42cb55bbfa5dc071fd56034615072f7a'
+  @url='http://erlang.org/download/otp_doc_html_R13B02-1.tar.gz'
+  @md5='d48da533b49f7b32c94032f2a53c0073'
 end
 
 class Erlang <Formula
+  @version='R13B02-1'
   @homepage='http://www.erlang.org'
-  @url='http://erlang.org/download/otp_src_R13B02.tar.gz'
-  @md5='80048e589272db810f5d536f47050ab8'
-
-  def deps
-    LibraryDep.new 'icu4c'
-    LibraryDep.new 'openssl'
-  end
+  @url='http://erlang.org/download/otp_src_R13B02-1.tar.gz'
+  @md5='2593b9312eb1b15bf23a968743138c52'
 
   # def patches
   #   [
@@ -37,6 +35,9 @@ class Erlang <Formula
   #   ]
   # end
 
+  depends_on 'icu4c'
+  depends_on 'openssl'
+
   def install
     ENV.deparallelize
     config_flags = ["--disable-debug",
@@ -47,7 +48,7 @@ class Erlang <Formula
                           "--enable-smp-support",
                           "--enable-hipe"]
 
-    if Hardware.intel_family == :core2 and MACOS_VERSION == 10.6
+    if Hardware.is_64_bit? and MACOS_VERSION == 10.6
       config_flags << "--enable-darwin-64bit" 
       config_flags << "--enable-m64-build"
     end
@@ -57,6 +58,6 @@ class Erlang <Formula
     system "make install"
 
     ErlangManuals.new.brew { man.install Dir['man/*'] }
-    ErlangHtmlDocs.new.brew { doc.install }
+    ErlangHtmlDocs.new.brew { doc.install Dir['*'] }
   end
 end

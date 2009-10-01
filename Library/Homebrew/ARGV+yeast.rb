@@ -58,13 +58,16 @@ module HomebrewArgvExtension
     flag? '--force'
   end
   def verbose?
-    flag? '--verbose'
+    flag? '--verbose' or ENV['HOMEBREW_VERBOSE']
   end
   def debug?
     flag? '--debug' or ENV['HOMEBREW_DEBUG']
   end
   def quieter?
     flag? '--quieter'
+  end
+  def interactive?
+    flag? '--interactive'
   end
 
   def flag? flag
@@ -79,20 +82,25 @@ module HomebrewArgvExtension
   def usage
     <<-EOS
 Usage: brew command [formula] ...
-Usage: brew [--prefix] [--cache] [--version]
+Usage: brew [--prefix] [--cache] [--version|-v]
 Usage: brew [--verbose|-v]
 
 Commands:
-  install formula ... [--debug|-d] [--interactive|-i]
+  install formula ... [--debug|-d] [--interactive|-i] [--ignore-dependencies]
   remove formula ...
-  search [regex]
-  list [formula] ...
+  search [/regex/] [substring]
+  list [--brewed] [--unbrewed] [formula] ...
   link formula ...
+  unlink formula ...
   home formula ...
   info [formula] [--github]
-  create URL
   prune
   update
+
+Commands useful when contributing:
+  log formula
+  create URL
+  edit [formula]
 
 To visit the Homebrew homepage type:
   brew home

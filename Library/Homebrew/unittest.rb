@@ -18,9 +18,11 @@ require 'update'
 # these are defined in global.rb, but we don't want to break our actual
 # homebrew tree, and we do want to test everything :)
 HOMEBREW_PREFIX=Pathname.new '/private/tmp/testbrew/prefix'
+HOMEBREW_REPOSITORY=HOMEBREW_PREFIX
 HOMEBREW_CACHE=HOMEBREW_PREFIX.parent+"cache"
 HOMEBREW_CELLAR=HOMEBREW_PREFIX.parent+"cellar"
 HOMEBREW_USER_AGENT="Homebrew"
+MACOS_VERSION=10.6
 
 (HOMEBREW_PREFIX+'Library'+'Formula').mkpath
 Dir.chdir HOMEBREW_PREFIX
@@ -33,17 +35,21 @@ require 'ARGV+yeast' # needs to be after test/unit to avoid conflict with Option
 class MockFormula <Formula
   def initialize url
     @url=url
+    @homepage = 'http://example.com/'
     super 'test'
   end
 end
 
 class MostlyAbstractFormula <Formula
   @url=''
+  @homepage = 'http://example.com/'
 end
 
 class TestBall <Formula
-  def initialize
+  # name parameter required for some Formula::factory
+  def initialize name=nil
     @url="file:///#{Pathname.new(ABS__FILE__).parent.realpath}/testball-0.1.tbz"
+    @homepage = 'http://example.com/'
     super "testball"
   end
   def install
@@ -55,8 +61,9 @@ end
 class TestZip <Formula
   def initialize
     zip=HOMEBREW_CACHE.parent+'test-0.1.zip'
-    Kernel.system 'zip', '-0', zip, ABS__FILE__
+    Kernel.system '/usr/bin/zip', '-0', zip, ABS__FILE__
     @url="file://#{zip}"
+    @homepage = 'http://example.com/'
     super 'testzip'
   end
 end
@@ -74,12 +81,13 @@ class TestBallOverrideBrew <Formula
 end
 
 class TestScriptFileFormula <ScriptFileFormula
-  @url="file:///#{Pathname.new(ABS__FILE__).realpath}"
-  @version="1"
+  url "file:///#{Pathname.new(ABS__FILE__).realpath}"
+  version "1"
   
   def initialize
-    super
     @name='test-script-formula'
+    @homepage = 'http://example.com/'
+    super
   end
 end
 
@@ -99,7 +107,7 @@ class RefreshBrewMock < RefreshBrew
   end
   
   def expectations_met?
-    @expect.keys == @called
+    @expect.keys.sort == @called.sort
   end
   
   def inspect
@@ -123,9 +131,13 @@ def nostdout
 end
 
 module ExtendArgvPlusYeast
-  def stick_an_arg_in_thar
+  def reset
     @named=nil
-    unshift 'foo'
+    @formulae=nil
+    @kegs=nil
+    while ARGV.count > 0
+      ARGV.shift
+    end
   end
 end
 ARGV.extend ExtendArgvPlusYeast
@@ -351,7 +363,18 @@ class BeerTasting <Test::Unit::TestCase
 
     path=HOMEBREW_PREFIX+'Library'+'Formula'+"#{FOOBAR}.rb"
     path.dirname.mkpath
-    `echo "require 'brewkit'; class #{classname} <Formula; @url=''; end" > #{path}`
+    File.open(path, 'w') do |f|
+      f << %{
+        require 'brewkit'
+        class #{classname} < Formula
+          @url=''
+          def initialize(*args)
+            @homepage = 'http://example.com/'
+            super
+          end
+        end
+      }
+    end
     
     assert_not_nil Formula.factory(FOOBAR)
   end
@@ -372,8 +395,9 @@ class BeerTasting <Test::Unit::TestCase
   end
 
   def test_no_ARGV_dupes
-    ARGV.unshift'foo'
-    ARGV.unshift'foo'
+    ARGV.reset
+    ARGV.unshift 'foo'
+    ARGV.unshift 'foo'
     n=0
     ARGV.named.each{|arg| n+=1 if arg == 'foo'}
     assert_equal 1, n
@@ -385,9 +409,10 @@ class BeerTasting <Test::Unit::TestCase
     assert_raises(UsageError) { ARGV.kegs }
     assert ARGV.named_empty?
     
-    (HOMEBREW_CELLAR+'foo'+'0.1').mkpath
+    (HOMEBREW_CELLAR+'mxcl'+'10.0').mkpath
     
-    ARGV.stick_an_arg_in_thar
+    ARGV.reset
+    ARGV.unshift 'mxcl'
     assert_equal 1, ARGV.named.length
     assert_equal 1, ARGV.kegs.length
     assert_raises(FormulaUnavailableError) { ARGV.formulae }
@@ -425,7 +450,7 @@ class BeerTasting <Test::Unit::TestCase
     nostdout do
       assert_nothing_raised do
         f=TestBall.new
-        make 'http://example.com/testball-0.1.tbz'
+        make f.url
         info f.name
         clean f
         prune
@@ -500,6 +525,11 @@ class BeerTasting <Test::Unit::TestCase
     assert_raises(RuntimeError) {Pathname.getwd.install 'non_existant_file'}
   end
   
+  def test_omega_version_style
+    f=MockFormula.new 'http://www.alcyone.com/binaries/omega/omega-0.80.2-src.tar.gz'
+    assert_equal '0.80.2', f.version
+  end
+  
   def test_formula_class_func
     assert_equal Formula.class_s('s-lang'), 'SLang'
     assert_equal Formula.class_s('pkg-config'), 'PkgConfig'
@@ -514,38 +544,41 @@ class BeerTasting <Test::Unit::TestCase
   def test_updater_update_homebrew_without_any_changes
     outside_prefix do
       updater = RefreshBrewMock.new
-      updater.in_prefix_expect("git checkout masterbrew")
-      updater.in_prefix_expect("git pull origin masterbrew", "Already up-to-date.\n")
+      updater.in_prefix_expect("git checkout master")
+      updater.in_prefix_expect("git pull origin master", "Already up-to-date.\n")
       
       assert_equal false, updater.update_from_masterbrew!
       assert updater.expectations_met?
       assert updater.updated_formulae.empty?
+      assert updater.added_formulae.empty?
     end
   end
   
   def test_updater_update_homebrew_without_formulae_changes
     outside_prefix do
       updater = RefreshBrewMock.new
-      updater.in_prefix_expect("git checkout masterbrew")
+      updater.in_prefix_expect("git checkout master")
       output = fixture('update_git_pull_output_without_formulae_changes')
-      updater.in_prefix_expect("git pull origin masterbrew", output)
+      updater.in_prefix_expect("git pull origin master", output)
       
       assert_equal true, updater.update_from_masterbrew!
       assert !updater.pending_formulae_changes?
       assert updater.updated_formulae.empty?
+      assert updater.added_formulae.empty?
     end
   end
   
   def test_updater_update_homebrew_with_formulae_changes
     outside_prefix do
       updater = RefreshBrewMock.new
-      updater.in_prefix_expect("git checkout masterbrew")
+      updater.in_prefix_expect("git checkout master")
       output = fixture('update_git_pull_output_with_formulae_changes')
-      updater.in_prefix_expect("git pull origin masterbrew", output)
+      updater.in_prefix_expect("git pull origin master", output)
       
       assert_equal true, updater.update_from_masterbrew!
       assert updater.pending_formulae_changes?
-      assert_equal %w{ antiword bash-completion xar yajl }, updater.updated_formulae
+      assert_equal %w{ xar yajl }, updater.updated_formulae
+      assert_equal %w{ antiword bash-completion ddrescue dict lua }, updater.added_formulae
     end
   end
   
@@ -555,6 +588,11 @@ class BeerTasting <Test::Unit::TestCase
       updater.in_prefix_expect('git log -l -1 --pretty=format:%H', 'the-revision-hash')
       assert_equal 'the-revision-hash', updater.current_revision
     end
+  end
+  
+  def test_angband_version_style
+    f = MockFormula.new 'http://rephial.org/downloads/3.0/angband-3.0.9b-src.tar.gz'
+    assert_equal '3.0.9b', f.version
   end
   
   private
@@ -575,6 +613,19 @@ class BeerTasting <Test::Unit::TestCase
     end
     @fixture_data
   end
+
+  def test_ENV_options
+    ENV.gcc_4_0_1
+    ENV.gcc_4_2
+    ENV.O3
+    ENV.minimal_optimization
+    ENV.no_optimization
+    ENV.libxml2
+    ENV.x11
+    ENV.enable_warnings
+    assert !ENV.cc.empty?
+    assert !ENV.cxx.empty?
+  end
 end
 
 __END__
@@ -584,7 +635,7 @@ update_git_pull_output_without_formulae_changes: |
   remote: Total 39 (delta 20), reused 0 (delta 0)
   Unpacking objects: 100% (39/39), done.
   From git://github.com/mxcl/homebrew
-   * branch            masterbrew -> FETCH_HEAD
+   * branch            master -> FETCH_HEAD
   Updating 14ef7f9..f414bc8
   Fast forward
    Library/Homebrew/ARGV+yeast.rb                |   35 ++--
@@ -604,7 +655,7 @@ update_git_pull_output_with_formulae_changes: |
   remote: Total 39 (delta 20), reused 0 (delta 0)
   Unpacking objects: 100% (39/39), done.
   From git://github.com/mxcl/homebrew
-   * branch            masterbrew -> FETCH_HEAD
+   * branch            master -> FETCH_HEAD
   Updating 14ef7f9..f414bc8
   Fast forward
    Library/Contributions/brew_bash_completion.sh |    6 +-

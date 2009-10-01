@@ -5,11 +5,8 @@ class Spidermonkey <Formula
   @homepage='https://developer.mozilla.org/en/SpiderMonkey'
   @md5='5571134c3863686b623ebe4e6b1f6fe6'
 
-  def deps
-    # You can build Python without readline, but you really don't want to.
-    LibraryDep.new 'readline'
-    LibraryDep.new 'nspr'
-  end
+  depends_on 'readline'
+  depends_on 'nspr'
 
   def patches
     DATA
@@ -17,6 +14,17 @@ class Spidermonkey <Formula
 
   def install
     ENV.j1
+
+    # Spidermonkey hardsets the CC and CCC environment variables to cc and g++
+    # but homebrew uses compiler flags that aren't available in Apple's default cc (version 4.0.1)
+    # instead use the compilers chosen by homebrew and set in the CC and CXX environment variables
+    inreplace "src/config/Darwin.mk", 'CC = cc', "CC = #{ENV['CC']}"
+    inreplace "src/config/Darwin.mk", 'CCC = g++', "CCC = #{ENV['CXX']}"
+
+    # aparently this flag causes the build to fail for ivanvc on 10.5 with a
+    # penryn (core 2 duo) CPU. So lets be cautious here and remove it.
+    ENV['CFLAGS'] = ENV['CFLAGS'].gsub(/-msse[^\s]+/, '')
+
     Dir.chdir "src" do
       system "make JS_DIST=#{HOMEBREW_PREFIX} JS_THREADSAFE=1 DEFINES=-DJS_C_STRINGS_ARE_UTF8 -f Makefile.ref"
       system "make JS_DIST=#{prefix} -f Makefile.ref export"

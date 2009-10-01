@@ -49,13 +49,16 @@ class HttpDownloadStrategy <AbstractDownloadStrategy
     return @dl # thus performs checksum verification
   end
   def stage
-    case `file -b #{@dl}`
-      when /^Zip archive data/
-        safe_system 'unzip', '-qq', @dl
+    # magic numbers stolen from /usr/share/file/magic/
+    File.open(@dl) do |f|
+      # get the first four bytes
+      case f.read(4)
+      when /^PK\003\004/ # .zip archive
+        safe_system '/usr/bin/unzip', '-qq', @dl
         chdir
-      when /^(gzip|bzip2) compressed data/
-        # TODO do file -z now to see if it is in fact a tar
-        safe_system 'tar', 'xf', @dl
+      when /^\037\213/, /^BZh/ # gzip/bz2 compressed
+        # TODO check if it's really a tar archive
+        safe_system '/usr/bin/tar', 'xf', @dl
         chdir
       else
         # we are assuming it is not an archive, use original filename
@@ -64,6 +67,7 @@ class HttpDownloadStrategy <AbstractDownloadStrategy
         # HOWEVER if this breaks some expectation you had we *will* change the
         # behaviour, just open an issue at github
         FileUtils.mv @dl, File.basename(@url)
+      end
     end
   end
 private
@@ -94,7 +98,7 @@ class SubversionDownloadStrategy <AbstractDownloadStrategy
     ohai "Checking out #{@url}"
     @co=HOMEBREW_CACHE+@unique_token
     unless @co.exist?
-      safe_system 'svn', 'checkout', @url, @co
+      safe_system '/usr/bin/svn', 'checkout', @url, @co
     else
       # TODO svn up?
       puts "Repository already checked out"
@@ -102,7 +106,7 @@ class SubversionDownloadStrategy <AbstractDownloadStrategy
   end
   def stage
     # Force the export, since the target directory will already exist
-    safe_system 'svn', 'export', '--force', @co, Dir.pwd
+    safe_system '/usr/bin/svn', 'export', '--force', @co, Dir.pwd
   end
 end
 
@@ -122,6 +126,73 @@ class GitDownloadStrategy <AbstractDownloadStrategy
     Dir.chdir @clone do
       # http://stackoverflow.com/questions/160608/how-to-do-a-git-export-like-svn-export
       safe_system 'git', 'checkout-index', '-af', "--prefix=#{dst}/"
+    end
+  end
+end
+
+class CVSDownloadStrategy <AbstractDownloadStrategy
+  def fetch
+    ohai "Checking out #{@url}"
+    @co=HOMEBREW_CACHE+@unique_token
+
+    # URL of cvs cvs://:pserver:anoncvs@www.gccxml.org:/cvsroot/GCC_XML:gccxml
+    # will become:
+    # cvs -d :pserver:anoncvs@www.gccxml.org:/cvsroot/GCC_XML login
+    # cvs -d :pserver:anoncvs@www.gccxml.org:/cvsroot/GCC_XML co gccxml
+    mod, url = split_url(@url)
+
+    unless @co.exist?
+      Dir.chdir HOMEBREW_CACHE do
+        safe_system '/usr/bin/cvs', '-d', url, 'login'
+        safe_system '/usr/bin/cvs', '-d', url, 'checkout', '-d', @unique_token, mod
+      end
+    else
+      # TODO cvs up?
+      puts "Repository already checked out"
+    end
+  end
+
+  def stage
+    FileUtils.cp_r(Dir[HOMEBREW_CACHE+@unique_token+"*"], Dir.pwd)
+
+    require 'find'
+
+    Find.find(Dir.pwd) do |path|
+      if FileTest.directory?(path) && File.basename(path) == "CVS"
+        Find.prune
+        FileUtil.rm_r path, :force => true
+      end
+    end
+  end
+
+private
+  def split_url(in_url)
+    parts=in_url.sub(%r[^cvs://], '').split(/:/)
+    mod=parts.pop
+    url=parts.join(':')
+    [ mod, url ]
+  end
+end
+
+class MercurialDownloadStrategy <AbstractDownloadStrategy
+  def fetch
+    ohai "Cloning #{@url}"
+    @clone=HOMEBREW_CACHE+@unique_token
+
+    url=@url.sub(%r[^hg://], '')
+
+    unless @clone.exist?
+      safe_system 'hg', 'clone', url, @clone
+    else
+      # TODO hg pull?
+      puts "Repository already cloned"
+    end
+  end
+  def stage
+    dst=Dir.getwd
+    Dir.chdir @clone do
+      # http://stackoverflow.com/questions/160608/how-to-do-a-git-export-like-svn-export
+      safe_system 'hg', 'archive', '-y', '-t', 'files', dst
     end
   end
 end
